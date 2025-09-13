@@ -2,6 +2,7 @@ import os
 import sys
 from typing import Tuple
 import anthropic
+import json
 
 class ToolDefinition:
     """Defines a tool with a name and description."""
@@ -28,17 +29,18 @@ class Agent:
         """
         print("Chat with Claude (press Ctrl+D or Ctrl+C to exit):")
         conversation = []
+
+        read_user_input = True # Flag to control when to ask for user input
+
         # Main conversation loop
         while True:
-            print("\033[94mYou\033[0m: ", end="", flush=True)
-
-            user_message, ok = self.get_user_message()
-            if not ok:
-                print("\nExiting chat.")
-                break
-            
-            # Add user message to conversation history
-            conversation.append({"role": "user", "content": user_message})
+            if read_user_input:
+                print("\033[94mYou\033[0m: ", end="", flush=True)
+                user_message, ok = self.get_user_message()
+                if not ok:
+                    print("\nExiting chat.")
+                    break
+                conversation.append({"role": "user", "content": user_message})
 
             # Send the conversation to Claude and get a response
             try:
@@ -48,20 +50,65 @@ class Agent:
                 return
 
             # Extract the text content from Claude's response
-            assistant_content = ""
+            assistant_content = []
             for content in message.content:
                 if content.type == "text":
-                    assistant_content += content.text
-        
+                    assistant_content.append({"type": "text", "text": content.text})
+                elif content.type == "tool_use":
+                    assistant_content.append({"type": "tool_use", "id":content.id, "name":content.name, "input":content.input})
 
             # Add Claude's response to conversation history
             conversation.append({"role": "assistant", "content": assistant_content})
             
-            # Print Claude's response 
-            for content in message.content: 
-                if content.type == "text": 
+            tool_results = []
+            for content in message.content:
+                if content.type == "text":
                     print("\033[92mClaude\033[0m:", content.text)
+                elif content.type == "tool_use":
+                    # We listen for the tool
+                    result = self.execute_tool(content.id, content.name, content.input)
+                    tool_results.append(result)
+            
+            if len(tool_results)==0:
+                read_user_input = True
+                continue
+
+            # Tools were used, so send results back to Claude.
+            read_user_input = False
+            conversation.append({"role": "user", "content": tool_results})
         
+    def execute_tool(self, tool_id: str, tool_name: str, tool_input: dict) -> dict:
+        """
+        Execute the tool that Claude requested. This is equivalent to Go's executeTool function.
+        """
+        if tool_name not in self.tools:
+            return {
+                "type": "tool_result",
+                "tool_use_id": tool_id,
+                "content":"Tool not found",
+                "is_error": True
+            }
+        tool_def = self.tools[tool_name]
+        # print the tool that is being executed
+        print(f"\033[1;32mtool\033[0m: {tool_name}({json.dumps(tool_input)})")
+
+        # Execute the actual tool function
+        try:
+            result = tool_def.function(tool_input)
+            return {
+                "type": "tool_result",
+                "tool_use_id": tool_id,
+                "content": result
+            }
+        except Exception as e:
+            return {
+                "type": "tool_result",
+                "tool_use_id": tool_id,
+                "content": str(e),
+                "is_error": True
+            }
+
+
     def run_inference(self, conversation):
         """
         Send the conversation history to Claude and get a response.
