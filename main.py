@@ -3,6 +3,7 @@ import sys
 from typing import Tuple
 import anthropic
 import json
+from pathlib import Path
 
 class ToolDefinition:
     """Defines a tool with a name and description."""
@@ -210,6 +211,135 @@ READ_FILE_DEFINITION = ToolDefinition(
     function=read_file
 )
 
+def list_files(input_data: dict) -> str:
+    """
+    List files in at a given path. 
+    Returns JSON string with list of files/directories.
+    """
+    path = input_data.get("path", ".")
+
+    try:
+        from pathlib import Path
+        path_obj = Path(path)
+        if not path_obj.exists():
+            raise FileNotFoundError(f"Path not found: {path}")
+        
+        files = []
+        if path_obj.is_file():
+            return json.dumps([path_obj.name])
+        
+        for item in sorted(path_obj.iterdir()):
+            if item.is_dir():
+                files.append(f"{item.name}/")
+            else:
+                files.append(item.name)
+        return json.dumps(files)
+    
+    except Exception as e:
+        raise Exception(f"Error listing files: {e}")
+    
+LIST_FILES_DEFINITION = ToolDefinition(
+    name="list_files",
+    description="List files in a given directory. Use this to see what files are available. If you provide a file path, it will return just that file.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "The relative path of a directory or file in the working directory. Defaults to current directory."
+            }
+        },
+        #"required": []
+    },
+    function=list_files
+)
+
+def edit_file(input_data: dict) -> str:
+    """
+    Edit a file by replacing old str with new str. Can also create new file if old str is empty
+    """
+    path = input_data.get("path", "")
+    old_str = input_data.get("old_str", "")
+    new_str = input_data.get("new_str", "")
+
+    #validate inputs
+    if not path:
+        raise ValueError("Path is required")
+    if old_str == new_str:
+        raise ValueError("Old and new strings must be different")
+    
+    path_obj = Path(path)
+
+    # Handle file creation case 
+    if not path_obj.exists():
+        if old_str=="":
+            return create_new_file(path, new_str)
+        else:
+            raise FileNotFoundError(f"File not found: {path}")
+    
+    # Read existing file
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except Exception as e:
+        raise Exception(f"Error reading file: {e}")
+    
+    # Check if old_str exists in content.
+    if old_str and old_str not in content:
+        raise ValueError(f"String to replace not found in file: {old_str}")
+    
+    #replace content
+    new_content = content.replace(old_str, new_str)
+    
+    # Write back to file
+    try:
+        with open(path_obj, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        return "OK"
+    except Exception as e:
+        raise Exception(f"Error writing to file: {e}")
+
+def create_new_file(path: str, content: str) -> str:
+    """
+    Create a new file with the given content. Create parent directories if needed.
+    """
+    path_obj = Path(path)
+    
+    # Create parent directories if they don't exist
+    path_obj.parent.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        with open(path_obj, 'w', encoding='utf-8') as f:
+            f.write(content)
+        return "OK"
+    except Exception as e:
+        raise Exception(f"Error creating file: {e}")
+
+EDIT_FILE_DEFINITION = ToolDefinition(
+    name="edit_file",
+    description="Edit a file by replacing old string with new string. If the file doesn't exist, you can create it by providing an empty old string.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "The path to the file."
+            },
+            "old_str": {
+                "type": "string",
+                "description": "Text for search for - must exactly match and must only have  one match exactly. If creating a new file, this should be empty."
+            },
+            "new_str": {
+                "type": "string",
+                "description": "Text to replace old_str with"
+            }
+        },
+        "required": ["path", "old_str", "new_str"]
+    },
+    function=edit_file
+)
+
+
 
 def main():
     """
@@ -225,7 +355,7 @@ def main():
 
     client = anthropic.Anthropic(api_key=api_key)
 
-    tools = [READ_FILE_DEFINITION]
+    tools = [READ_FILE_DEFINITION, LIST_FILES_DEFINITION, EDIT_FILE_DEFINITION]
 
     agent = Agent(client=client, get_user_message=get_user_message, tools=tools)
     try:
