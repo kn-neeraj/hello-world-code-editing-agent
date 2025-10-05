@@ -1,0 +1,12 @@
+# Python Calculator App Requirements
+# This calculator app uses only Python standard library modules
+# No external dependencies are required
+
+# Python version requirement
+# python>=3.6
+
+# Optional: Development dependencies for enhanced testing
+# pytest>=6.0.0  # Alternative testing framework
+# pytest-cov>=2.10.0  # Coverage reporting
+# black>=21.0.0  # Code formatter
+# flake8>=3.8.0  # Code linter

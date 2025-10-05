@@ -26,15 +26,18 @@ class Agent:
     
     def run(self):
         """
-        Main agent loop - we'll implement this in the next step
+        Main agent loop
         """
         print("Chat with Claude (press Ctrl+D or Ctrl+C to exit):")
-        conversation = []
+        
+        # Initialise conversation state
+        conversation = [] # Stores entire conversation history (user + claude messages)
 
-        read_user_input = True # Flag to control when to ask for user input
+        read_user_input = True # Flag to control when to ask for user input vs processing tool results
 
-        # Main conversation loop
+        # Step 2 : Main conversation loop keeps running until user quits
         while True:
+            # STEP 3: Get user input (but only when appropriate)
             if read_user_input:
                 print("\033[94mYou\033[0m: ", end="", flush=True)
                 user_message, ok = self.get_user_message()
@@ -43,7 +46,8 @@ class Agent:
                     break
                 conversation.append({"role": "user", "content": user_message})
 
-            # Send the conversation to Claude and get a response
+            # STEP 4: Send entire conversation to Claude and get response
+            # This preserves both text and tool requests to conversation history
             try:
                 message = self.run_inference(conversation) 
             except Exception as e:
@@ -61,7 +65,8 @@ class Agent:
             # Add Claude's response to conversation history
             conversation.append({"role": "assistant", "content": assistant_content})
             
-            tool_results = []
+            # STEP 6: Process Claude's response - display text and execute tools
+            tool_results = [] #Collect results of any tools executed
             for content in message.content:
                 if content.type == "text":
                     print("\033[92mClaude\033[0m:", content.text)
@@ -69,12 +74,13 @@ class Agent:
                     # We listen for the tool
                     result = self.execute_tool(content.id, content.name, content.input)
                     tool_results.append(result)
-            
+
+            #STEP 7: Control the loop flow based on whether tools were used
             if len(tool_results)==0:
                 read_user_input = True
                 continue
 
-            # Tools were used, so send results back to Claude.
+             # STEP 8: Tools were used - send results back to Claude
             read_user_input = False
             conversation.append({"role": "user", "content": tool_results})
         
